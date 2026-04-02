@@ -1,0 +1,1657 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrampolineDichtheid</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; }
+
+    #map {
+      position: fixed;
+      top: 0; left: 0;
+      right: 320px; /* ruimte voor sidebar */
+      bottom: 0;
+    }
+
+    /* ── SIDEBAR ── */
+    #sidebar {
+      position: fixed;
+      top: 0; right: 0;
+      width: 320px; bottom: 0;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid #222;
+      z-index: 1000;
+    }
+
+    #sidebar-header {
+      padding: 14px 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+    #sidebar-header h2 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #e8ff47;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    #sidebar-header p {
+      font-size: 11px;
+      color: #666;
+    }
+    #sidebar-count {
+      font-size: 28px;
+      font-weight: 900;
+      color: #e8ff47;
+      line-height: 1;
+      margin-bottom: 2px;
+    }
+
+    #label-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #label-list::-webkit-scrollbar { width: 4px; }
+    #label-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+    .label-card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 5px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      display: flex;
+      flex-shrink: 0;
+      height: 48px;
+    }
+    .label-card:hover { border-color: #444; }
+    .label-card.selected { border-color: #e8ff47; }
+
+    .label-card-img {
+      width: 48px;
+      height: 48px;
+      flex-shrink: 0;
+      background: #222;
+      overflow: hidden;
+    }
+    .label-card-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .label-card-img .no-img {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      color: #444;
+    }
+
+    .label-card-info {
+      flex: 1;
+      padding: 5px 8px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      min-width: 0;
+    }
+    .label-card-prov {
+      font-size: 11px;
+      font-weight: 600;
+      color: #eee;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .label-card-coord {
+      font-size: 9px;
+      color: #555;
+      font-family: monospace;
+    }
+    .label-card-time {
+      font-size: 9px;
+      color: #444;
+    }
+    .label-card-urban {
+      font-size: 8px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      display: inline-block;
+      width: fit-content;
+    }
+    .label-card-urban.urban { background: rgba(0,200,255,0.15); color: #00c8ff; }
+    .label-card-urban.rural { background: rgba(100,200,100,0.15); color: #6dc86d; }
+
+    .label-card-delete {
+      flex-shrink: 0;
+      width: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: #333;
+      font-size: 14px;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+      border-left: 1px solid #2a2a2a;
+    }
+    .label-card-delete:hover {
+      color: #ff4757;
+      background: rgba(255,71,87,0.1);
+    }
+
+    /* ── TOOLBAR ── */
+    #toolbar {
+      position: fixed;
+      top: 12px; left: 12px;
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #info {
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    #label-btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: 2px solid #555;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #label-btn.active {
+      background: #e8ff47;
+      border-color: #e8ff47;
+      color: #000;
+      font-weight: bold;
+    }
+    .label-mode { cursor: crosshair !important; }
+
+    #minimap {
+      position: fixed;
+      bottom: 24px;
+      left: 12px;
+      width: 160px;
+      height: 120px;
+      border-radius: 8px;
+      border: 2px solid rgba(255,255,255,0.2);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      z-index: 999;
+      overflow: hidden;
+    }
+
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #e8ff47;
+      color: #000;
+      padding: 8px 20px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: bold;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 2000;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* ── SIDEBAR TOGGLE BUTTON (mobile) ── */
+    #sidebar-toggle {
+      display: none;
+      position: fixed;
+      bottom: 24px;
+      right: 12px;
+      z-index: 1001;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: #e8ff47;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* ── SEARCH ── */
+    #search-wrap {
+      position: relative;
+    }
+    #search-input {
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 2px solid #555;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      font-size: 13px;
+      width: 220px;
+      outline: none;
+    }
+    #search-input::placeholder { color: #777; }
+    #search-input:focus { border-color: #e8ff47; }
+
+    #search-results {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      width: 100%;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      overflow: hidden;
+      display: none;
+      z-index: 2000;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    }
+    #search-results.open { display: block; }
+    .search-result {
+      padding: 10px 14px;
+      font-size: 13px;
+      color: #eee;
+      cursor: pointer;
+      border-bottom: 1px solid #222;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .search-result:last-child { border-bottom: none; }
+    .search-result:hover { background: #252525; color: #e8ff47; }
+    .search-result-icon { font-size: 11px; color: #555; }
+
+    @media (max-width: 768px) {
+      #search-input { width: 160px; font-size: 12px; }
+    }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      #map {
+        right: 0;
+        bottom: 0;
+      }
+
+      #sidebar {
+        top: auto;
+        left: 0;
+        right: 0;
+        width: 100%;
+        height: 60vh;
+        bottom: -60vh;
+        border-left: none;
+        border-top: 2px solid #e8ff47;
+        border-radius: 16px 16px 0 0;
+        transition: bottom 0.3s cubic-bezier(0.4,0,0.2,1);
+        z-index: 1002;
+      }
+      #sidebar.open {
+        bottom: 0;
+      }
+
+      #sidebar-header {
+        border-radius: 16px 16px 0 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+      }
+      #sidebar-header-text { flex: 1; }
+
+      #sidebar-close {
+        display: flex;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #2a2a2a;
+        border: none;
+        color: #eee;
+        font-size: 16px;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      #sidebar-toggle {
+        display: flex;
+      }
+
+      #minimap {
+        display: none;
+      }
+
+      #toolbar {
+        top: 12px;
+        left: 8px;
+        right: 8px;
+        justify-content: space-between;
+      }
+      #info {
+        font-size: 12px;
+        padding: 6px 10px;
+      }
+      #label-btn {
+        font-size: 12px;
+        padding: 6px 12px;
+      }
+
+      #toast {
+        bottom: 80px;
+        font-size: 12px;
+      }
+
+      /* Bigger tap targets on mobile */
+      .label-card-delete {
+        width: 44px;
+        font-size: 18px;
+      }
+    }
+
+    /* iOS safe area */
+    @supports (padding-bottom: env(safe-area-inset-bottom)) {
+      #sidebar { padding-bottom: env(safe-area-inset-bottom); }
+      #sidebar-toggle { bottom: calc(24px + env(safe-area-inset-bottom)); }
+    }
+
+    .leaflet-popup-content-wrapper {
+      background: #1a1a1a;
+      color: #eee;
+      border: 1px solid #333;
+      border-radius: 6px;
+    }
+    .leaflet-popup-tip { background: #1a1a1a; }
+    .delete-popup-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #ff4757;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-top: 6px;
+      width: 100%;
+    }
+    .delete-popup-btn:hover { background: #e03444; }
+
+    /* ── VALIDATIE MODUS ── */
+    #validation-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1500;
+      pointer-events: none;
+    }
+    #validation-overlay.active { pointer-events: all; }
+
+    #validation-card {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #111;
+      border-top: 2px solid #333;
+      z-index: 1600;
+      padding: 16px;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #validation-card.active { display: flex; }
+
+    .val-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .val-title {
+      font-size: 12px;
+      color: #888;
+      letter-spacing: 0.05em;
+    }
+    .val-progress {
+      font-size: 12px;
+      color: #e8ff47;
+      font-weight: bold;
+    }
+    .val-close {
+      background: transparent;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #888;
+      font-size: 12px;
+      padding: 3px 8px;
+      cursor: pointer;
+    }
+    .val-close:hover { color: #ff4757; border-color: #ff4757; }
+
+    .val-content {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .val-photo {
+      width: 120px;
+      height: 120px;
+      border-radius: 6px;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #222;
+      border: 2px solid #333;
+    }
+    .val-photo img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    .val-photo .no-photo {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 32px;
+    }
+    .val-info { flex: 1; }
+    .val-address {
+      font-size: 13px;
+      font-weight: 600;
+      color: #eee;
+      margin-bottom: 4px;
+    }
+    .val-gemeente { font-size: 11px; color: #666; margin-bottom: 8px; }
+    .val-score-row {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .val-score-bar {
+      flex: 1; height: 4px; background: #333; border-radius: 2px; overflow: hidden;
+    }
+    .val-score-fill { height: 100%; border-radius: 2px; }
+    .val-score-num { font-size: 11px; font-weight: bold; }
+
+    .val-buttons {
+      display: flex;
+      gap: 8px;
+    }
+    .val-btn {
+      flex: 1;
+      padding: 12px;
+      border-radius: 8px;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      transition: all .15s;
+      font-weight: bold;
+    }
+    .val-btn-yes {
+      background: rgba(0,200,100,0.15);
+      border: 2px solid #00c864;
+      color: #00c864;
+    }
+    .val-btn-yes:hover { background: #00c864; color: #000; }
+    .val-btn-no {
+      background: rgba(255,71,87,0.15);
+      border: 2px solid #ff4757;
+      color: #ff4757;
+    }
+    .val-btn-no:hover { background: #ff4757; color: #fff; }
+    .val-btn-skip {
+      flex: 0.4;
+      background: transparent;
+      border: 1px solid #333;
+      color: #555;
+      font-size: 14px;
+    }
+    .val-btn-skip:hover { color: #eee; border-color: #555; }
+
+    .val-tile-circle {
+      /* Leaflet cirkel styling via JS */
+    }
+
+    @media (min-width: 769px) {
+      #validation-card {
+        left: auto;
+        right: 320px;
+        bottom: 24px;
+        width: 360px;
+        border-radius: 10px;
+        border: 1px solid #333;
+        border-top: 1px solid #333;
+      }
+    }
+    #vinex-panel {
+      position: fixed;
+      bottom: 24px;
+      left: 186px;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 200px;
+    }
+    .vinex-btn {
+      padding: 5px 10px;
+      border-radius: 5px;
+      border: 1px solid #444;
+      background: rgba(0,0,0,0.85);
+      color: #eee;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all .2s;
+      text-align: left;
+    }
+    .vinex-btn:hover { border-color: #e8ff47; color: #e8ff47; }
+    .vinex-btn.active { background: #e8ff47; color: #000; border-color: #e8ff47; font-weight: bold; }
+
+    /* Grid progress bar */
+    #grid-bar {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 320px;
+      height: 4px;
+      background: #222;
+      z-index: 999;
+    }
+    #grid-bar-fill {
+      height: 100%;
+      background: #e8ff47;
+      transition: width .3s;
+    }
+    #grid-info {
+      display: none;
+      position: fixed;
+      top: 56px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.85);
+      color: #eee;
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      z-index: 999;
+      white-space: nowrap;
+      border: 1px solid #333;
+    }
+
+    @media (max-width: 768px) {
+      #vinex-panel { display: none; }
+      #grid-bar { right: 0; }
+    }
+
+    /* ── NEGATIVE GENERATOR OVERLAY ── */
+    #neg-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #neg-box {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 28px 32px;
+      min-width: 320px;
+      text-align: center;
+    }
+    #neg-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #eee;
+      margin-bottom: 20px;
+    }
+    #neg-progress-track {
+      height: 6px;
+      background: #333;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    #neg-progress-fill {
+      height: 100%;
+      background: #ff4757;
+      border-radius: 3px;
+      width: 0%;
+      transition: width .3s;
+    }
+    #neg-status {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 16px;
+    }
+    #neg-cancel {
+      padding: 7px 20px;
+      border-radius: 5px;
+      border: 1px solid #444;
+      background: transparent;
+      color: #aaa;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #neg-cancel:hover { border-color: #ff4757; color: #ff4757; }
+
+    /* ── PREDICTIONS LEGENDA ── */
+    #pred-legend {
+      display: none;
+      position: fixed;
+      bottom: 160px;
+      left: 12px;
+      z-index: 998;
+      background: rgba(0,0,0,0.85);
+      border: 1px solid #333;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #eee;
+    }
+    #pred-legend.visible { display: block; }
+    .pred-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .pred-legend-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 1px solid #000;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="toolbar">
+    <div id="info">
+      TrampolineDichtheid &nbsp;|&nbsp; <strong id="total">0</strong> locaties
+    </div>
+    <div id="search-wrap">
+      <input id="search-input" type="text" placeholder="🔍 Zoek woonplaats..." autocomplete="off" />
+      <div id="search-results"></div>
+    </div>
+    <button id="label-btn">Labelmodus uit</button>
+  </div>
+
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <div id="sidebar-header-text">
+        <div id="sidebar-count">0</div>
+        <h2>Gelabelde trampolines</h2>
+        <p>Klik op een kaart om te verwijderen</p>
+      </div>
+      <button id="sidebar-close" onclick="closeSidebar()">✕</button>
+    </div>
+    <div id="label-list"></div>
+  </div>
+
+  <button id="sidebar-toggle" onclick="toggleSidebar()">📋</button>
+
+  <div id="toast"></div>
+
+  <div id="minimap"></div>
+
+  <div id="vinex-panel">
+    <button class="vinex-btn" id="btn-predictions" onclick="togglePredictions()">🤖 Toon modelvoorspellingen</button>
+    <button class="vinex-btn" id="btn-validate" onclick="startValidation()">✅ Valideer voorspellingen</button>
+    <button class="vinex-btn" id="btn-highlight" onclick="toggleVinexHighlight()">🏘 Toon nieuwbouwwijken</button>
+    <button class="vinex-btn" id="btn-next" onclick="nextSuggestion()">➡️ Volgende wijk</button>
+    <button class="vinex-btn" id="btn-rural" onclick="nextRural()">🌳 Landelijk gebied</button>
+    <button class="vinex-btn" id="btn-negatives" onclick="startNegativeGeneration()">❌ Genereer negatieven</button>
+    <button class="vinex-btn" id="btn-export" onclick="exportDataset()">💾 Download backup</button>
+    <button class="vinex-btn" id="btn-grid" onclick="toggleGridMode()">⊞ Grid-modus</button>
+  </div>
+
+  <!-- Validatie card -->
+  <div id="validation-card">
+    <div class="val-header">
+      <div class="val-title">VALIDEER MODELVOORSPELLING</div>
+      <div class="val-progress" id="val-progress">0 / 0</div>
+      <button class="val-close" onclick="stopValidation()">Stop</button>
+    </div>
+    <div class="val-content">
+      <div class="val-photo" id="val-photo">
+        <div class="no-photo">🛰</div>
+      </div>
+      <div class="val-info">
+        <div class="val-address" id="val-address">Laden...</div>
+        <div class="val-gemeente" id="val-gemeente"></div>
+        <div class="val-score-row">
+          <div class="val-score-bar">
+            <div class="val-score-fill" id="val-score-fill" style="width:0%"></div>
+          </div>
+          <div class="val-score-num" id="val-score-num"></div>
+        </div>
+        <div style="font-size:10px;color:#555">Is dit een trampoline?</div>
+      </div>
+    </div>
+    <div class="val-buttons">
+      <button class="val-btn val-btn-yes" onclick="validateCurrent(true)">✅ Ja</button>
+      <button class="val-btn val-btn-no" onclick="validateCurrent(false)">❌ Nee</button>
+      <button class="val-btn val-btn-skip" onclick="skipValidation()">→ Skip</button>
+    </div>
+  </div>
+
+  <div id="pred-legend">
+    <div style="font-size:10px;color:#888;margin-bottom:6px;letter-spacing:0.05em">MODEL SCORE</div>
+    <div class="pred-legend-item"><div class="pred-legend-dot" style="background:#ff4757"></div>> 90% zeker</div>
+    <div class="pred-legend-item"><div class="pred-legend-dot" style="background:#ff9500"></div>80–90% zeker</div>
+    <div class="pred-legend-item"><div class="pred-legend-dot" style="background:#00c8ff"></div>70–80% zeker</div>
+    <div class="pred-legend-item"><div class="pred-legend-dot" style="background:#e8ff47"></div>Handmatig gelabeld</div>
+  </div>
+
+  <div id="neg-overlay" style="display:none">
+    <div id="neg-box">
+      <div id="neg-title">❌ Negatieven genereren</div>
+      <div id="neg-progress-track"><div id="neg-progress-fill"></div></div>
+      <div id="neg-status">Bezig...</div>
+      <button id="neg-cancel" onclick="cancelNegatives()">Stop</button>
+    </div>
+  </div>
+
+  <div id="grid-bar"><div id="grid-bar-fill" style="width:0%"></div></div>
+  <div id="grid-info"></div>
+
+  <script>
+    var SUPABASE_URL = 'https://abpdeumkgsqqfissdute.supabase.co';
+    var SUPABASE_KEY = 'sb_publishable_SV201kPIkMD1rzIYLezGaw_7xOfU2AG';
+    var MAPBOX_TOKEN = 'pk.eyJ1Ijoic3RhbnZhbGsiLCJhIjoiY21uZXlrMHk3MDFvNzJvcjVhY2x4MHluNCJ9.oPTRLK7Z7BKqmlYKKxdPuw';
+    var CROP_SIZE = 256;
+    var CROP_ZOOM = 19;
+    var db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    var SEED = [
+      {lat:52.3676,lon:4.9041,city:"Amsterdam"},
+      {lat:52.3702,lon:4.8952,city:"Amsterdam"},
+      {lat:52.3588,lon:4.8810,city:"Amsterdam"},
+      {lat:52.3800,lon:4.9200,city:"Amsterdam"},
+      {lat:52.3500,lon:4.9100,city:"Amsterdam"},
+      {lat:51.9225,lon:4.4792,city:"Rotterdam"},
+      {lat:51.9100,lon:4.4900,city:"Rotterdam"},
+      {lat:51.9300,lon:4.4600,city:"Rotterdam"},
+      {lat:52.0705,lon:4.3007,city:"Den Haag"},
+      {lat:52.0800,lon:4.3100,city:"Den Haag"},
+      {lat:52.0907,lon:5.1214,city:"Utrecht"},
+      {lat:52.0800,lon:5.1100,city:"Utrecht"},
+      {lat:51.4416,lon:5.4697,city:"Eindhoven"},
+      {lat:53.2194,lon:6.5665,city:"Groningen"},
+      {lat:51.5555,lon:5.0913,city:"Tilburg"},
+      {lat:52.3508,lon:5.2647,city:"Almere"},
+      {lat:51.5719,lon:4.7683,city:"Breda"},
+      {lat:51.8426,lon:5.8546,city:"Nijmegen"},
+      {lat:52.3874,lon:4.6462,city:"Haarlem"},
+      {lat:52.1561,lon:5.3878,city:"Amersfoort"},
+    ];
+
+    var allPoints = SEED.slice();
+    var dbLabels = []; // labels from Supabase
+    var labelMode = false;
+    var sessionCount = 0;
+    var isSatellite = false;
+    var labelMarkers = {}; // db_id -> leaflet marker
+
+    var PROVINCES = [
+      { name:'Noord-Holland', urban:true,  minLat:52.20,maxLat:52.95,minLon:4.50,maxLon:5.10 },
+      { name:'Zuid-Holland',  urban:true,  minLat:51.70,maxLat:52.20,minLon:3.90,maxLon:4.70 },
+      { name:'Utrecht',       urban:true,  minLat:51.92,maxLat:52.25,minLon:4.85,maxLon:5.55 },
+      { name:'Noord-Brabant', urban:false, minLat:51.20,maxLat:51.75,minLon:3.90,maxLon:5.95 },
+      { name:'Gelderland',    urban:false, minLat:51.70,maxLat:52.20,minLon:5.50,maxLon:6.90 },
+      { name:'Overijssel',    urban:false, minLat:52.15,maxLat:52.80,minLon:5.90,maxLon:7.05 },
+      { name:'Friesland',     urban:false, minLat:52.80,maxLat:53.50,minLon:4.70,maxLon:6.40 },
+      { name:'Groningen',     urban:false, minLat:52.95,maxLat:53.50,minLon:6.40,maxLon:7.25 },
+      { name:'Drenthe',       urban:false, minLat:52.45,maxLat:53.05,minLon:6.10,maxLon:7.05 },
+      { name:'Flevoland',     urban:false, minLat:52.25,maxLat:52.75,minLon:5.10,maxLon:5.95 },
+      { name:'Zeeland',       urban:false, minLat:51.15,maxLat:51.70,minLon:3.35,maxLon:4.25 },
+      { name:'Limburg',       urban:false, minLat:50.70,maxLat:51.25,minLon:5.55,maxLon:6.25 },
+    ];
+
+    function detectProvince(lat, lon) {
+      for (var i = 0; i < PROVINCES.length; i++) {
+        var p = PROVINCES[i];
+        if (lat >= p.minLat && lat <= p.maxLat && lon >= p.minLon && lon <= p.maxLon)
+          return { name: p.name, urban: p.urban };
+      }
+      return { name: 'Overig', urban: false };
+    }
+
+    function getMapboxCropUrl(lat, lon) {
+      return 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/' +
+        lon + ',' + lat + ',' + CROP_ZOOM + '/' + CROP_SIZE + 'x' + CROP_SIZE +
+        '?access_token=' + MAPBOX_TOKEN;
+    }
+
+    async function fetchAndUploadCrop(lat, lon, filename) {
+      try {
+        var resp = await fetch(getMapboxCropUrl(lat, lon));
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        var blob = await resp.blob();
+        var result = await db.storage.from('trampoline-crops').upload(filename, blob, { contentType: 'image/jpeg', upsert: false });
+        if (result.error) throw new Error(result.error.message);
+        return db.storage.from('trampoline-crops').getPublicUrl(filename).data.publicUrl;
+      } catch(e) {
+        console.error('Crop error:', e);
+        return null;
+      }
+    }
+
+    // ── MAP ──
+    var leafletMap = L.map('map').setView([52.2, 5.3], 8);
+    var satelliteLayer = L.tileLayer(
+      'https://service.pdok.nl/hwh/luchtfotorgb/wmts/v1_0/2023_orthoHR/EPSG:3857/{z}/{x}/{y}.jpeg',
+      { attribution: '© PDOK Luchtfoto 2023', maxZoom: 21, maxNativeZoom: 19 }
+    ).addTo(leafletMap);
+
+    var streetLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap © CARTO'
+    });
+
+    var isSatellite = true;
+
+    var bubbleLayer = L.layerGroup().addTo(leafletMap);
+    var markerLayer = L.layerGroup().addTo(leafletMap);
+
+    // ── MINIMAP ──
+    var miniMapLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: ''
+    });
+
+    // Simpele minimap via extra div
+    var minimapEl = document.getElementById('minimap');
+    var miniMap = L.map('minimap', {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: false,
+      scrollWheelZoom: false,
+      doubleClickZoom: false,
+      boxZoom: false,
+      keyboard: false,
+      touchZoom: false,
+    }).setView([52.2, 5.3], 6);
+    miniMapLayer.addTo(miniMap);
+
+    // Rode rechthoek die huidige view toont
+    var viewRect = L.rectangle(leafletMap.getBounds(), {
+      color: '#e8ff47', weight: 2, fill: true, fillOpacity: 0.15
+    }).addTo(miniMap);
+
+    leafletMap.on('moveend zoomend', function() {
+      viewRect.setBounds(leafletMap.getBounds());
+      miniMap.setView(leafletMap.getCenter(), Math.max(0, leafletMap.getZoom() - 6));
+    });
+
+    function buildClusters(points) {
+      var cities = {};
+      points.forEach(function(p) {
+        var key = p.city || 'Onbekend';
+        if (!cities[key]) cities[key] = { city: key, count: 0, lats: [], lons: [] };
+        cities[key].count++;
+        cities[key].lats.push(p.lat);
+        cities[key].lons.push(p.lon);
+      });
+      return Object.values(cities).map(function(c) {
+        return {
+          city: c.city, count: c.count,
+          lat: c.lats.reduce(function(a,b){return a+b},0)/c.lats.length,
+          lon: c.lons.reduce(function(a,b){return a+b},0)/c.lons.length,
+        };
+      }).sort(function(a,b){ return b.count - a.count; });
+    }
+
+    function countToColor(count, max) {
+      var t = Math.min(count / max, 1);
+      return 'rgb('+Math.round(t*255)+','+Math.round(200-t*100)+','+Math.round(255-t*255)+')';
+    }
+
+    function renderBubbles() {
+      bubbleLayer.clearLayers();
+      var clusters = buildClusters(allPoints);
+      if (!clusters.length) return;
+      var maxCount = clusters[0].count;
+      clusters.forEach(function(c) {
+        var r = 10 + (c.count / maxCount) * 40;
+        var color = countToColor(c.count, maxCount);
+        L.circleMarker([c.lat, c.lon], {
+          radius: r, fillColor: color, fillOpacity: 0.25,
+          color: color, weight: 2, opacity: 0.7,
+        }).bindPopup('<b>'+c.city+'</b><br>'+c.count+' trampolines').addTo(bubbleLayer);
+        L.circleMarker([c.lat, c.lon], {
+          radius: Math.max(3, r*0.25), fillColor: color,
+          fillOpacity: 0.9, color: '#000', weight: 1,
+        }).addTo(bubbleLayer);
+      });
+      document.getElementById('total').textContent = allPoints.length;
+    }
+
+    // ── SIDEBAR ──
+    function formatTime(ts) {
+      if (!ts) return '';
+      var d = new Date(ts);
+      return d.toLocaleDateString('nl-NL', { day:'numeric', month:'short' }) + ' ' +
+             d.toLocaleTimeString('nl-NL', { hour:'2-digit', minute:'2-digit' });
+    }
+
+    function renderSidebar() {
+      var list = document.getElementById('label-list');
+      document.getElementById('sidebar-count').textContent = dbLabels.length;
+
+      if (!dbLabels.length) {
+        list.innerHTML = '<div style="padding:20px;color:#444;font-size:12px;text-align:center">Nog geen labels.<br>Zet labelmodus aan en klik op een trampoline.</div>';
+        return;
+      }
+
+      // Nieuwste bovenaan
+      var sorted = dbLabels.slice().sort(function(a,b) {
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+
+      list.innerHTML = sorted.map(function(l) {
+        var imgHtml = l.image_url
+          ? '<img src="' + l.image_url + '" alt="crop" loading="lazy" />'
+          : '<div class="no-img">🛰</div>';
+        var urbanClass = l.urban ? 'urban' : 'rural';
+        var urbanLabel = l.urban ? 'Stedelijk' : 'Landelijk';
+        return '<div class="label-card" id="card-' + l.id + '" onclick="flyToLabel(\'' + l.id + '\',' + l.lat + ',' + l.lon + ')">' +
+          '<div class="label-card-img">' + imgHtml + '</div>' +
+          '<div class="label-card-info">' +
+            '<div class="label-card-prov">' + (l.provincie || 'Onbekend') + '</div>' +
+            '<div class="label-card-coord">' + l.lat.toFixed(4) + ', ' + l.lon.toFixed(4) + '</div>' +
+            '<div class="label-card-urban ' + urbanClass + '">' + urbanLabel + '</div>' +
+            '<div class="label-card-time">' + formatTime(l.created_at) + '</div>' +
+          '</div>' +
+          '<button class="label-card-delete" onclick="deleteLabel(event,\'' + l.id + '\',\'' + (l.image_url||'') + '\')" title="Verwijderen">🗑</button>' +
+        '</div>';
+      }).join('');
+    }
+
+    // ── FLY TO LABEL ──
+    window.flyToLabel = function(id, lat, lon) {
+      leafletMap.flyTo([lat, lon], 17, { duration: 1 });
+      // Highlight card
+      document.querySelectorAll('.label-card').forEach(function(c) { c.classList.remove('selected'); });
+      var card = document.getElementById('card-' + id);
+      if (card) card.classList.add('selected');
+      // Show marker popup
+      if (labelMarkers[id]) labelMarkers[id].openPopup();
+    };
+
+    // ── DELETE LABEL ──
+    window.deleteLabel = async function(event, id, imageUrl) {
+      event.stopPropagation();
+
+      // Delete from DB
+      var result = await db.from('labels').delete().eq('id', id);
+      if (result.error) { showToast('⚠️ Verwijderen mislukt'); return; }
+
+      // Delete from Storage
+      if (imageUrl) {
+        var path = imageUrl.split('/trampoline-crops/')[1];
+        if (path) await db.storage.from('trampoline-crops').remove([path]);
+      }
+
+      // Remove marker from map
+      if (labelMarkers[id]) {
+        leafletMap.removeLayer(labelMarkers[id]);
+        delete labelMarkers[id];
+      }
+
+      // Remove from local array
+      dbLabels = dbLabels.filter(function(l) { return l.id !== id; });
+      allPoints = allPoints.filter(function(p) { return p.db_id !== id; });
+
+      renderSidebar();
+      renderBubbles();
+      showToast('🗑 Label verwijderd');
+    };
+
+    // ── ADD LABEL MARKER TO MAP ──
+    function addLabelMarker(l) {
+      var marker = L.circleMarker([l.lat, l.lon], {
+        radius: 6, fillColor: '#e8ff47', fillOpacity: 1,
+        color: '#000', weight: 1,
+      });
+
+      var popupHtml = '<div style="font-size:12px">' +
+        '<b>' + (l.provincie || 'Onbekend') + '</b><br>' +
+        '<span style="color:#999;font-size:10px">' + l.lat.toFixed(4) + ', ' + l.lon.toFixed(4) + '</span><br>' +
+        (l.image_url ? '<img src="' + l.image_url + '" style="width:100%;border-radius:4px;margin-top:6px" />' : '') +
+        '<button class="delete-popup-btn" onclick="deleteLabel(event,\'' + l.id + '\',\'' + (l.image_url||'') + '\')">🗑 Verwijderen</button>' +
+      '</div>';
+
+      marker.bindPopup(popupHtml, { maxWidth: 220 });
+      marker.addTo(markerLayer);
+      labelMarkers[l.id] = marker;
+    }
+
+    // ── SEARCH (Nominatim geocoding) ──
+    var searchInput = document.getElementById('search-input');
+    var searchResults = document.getElementById('search-results');
+    var searchTimer;
+
+    searchInput.addEventListener('input', function() {
+      clearTimeout(searchTimer);
+      var q = searchInput.value.trim();
+      if (q.length < 2) { searchResults.classList.remove('open'); return; }
+      searchTimer = setTimeout(function() { doSearch(q); }, 350);
+    });
+
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        searchResults.classList.remove('open');
+        searchInput.blur();
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!e.target.closest('#search-wrap')) searchResults.classList.remove('open');
+    });
+
+    async function doSearch(q) {
+      try {
+        var url = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=nl&limit=5&q=' + encodeURIComponent(q);
+        var resp = await fetch(url, { headers: { 'Accept-Language': 'nl' } });
+        var data = await resp.json();
+        if (!data.length) {
+          searchResults.innerHTML = '<div class="search-result" style="color:#555;cursor:default">Geen resultaten gevonden</div>';
+          searchResults.classList.add('open');
+          return;
+        }
+        searchResults.innerHTML = data.map(function(r) {
+          var name = r.display_name.split(',').slice(0,2).join(', ');
+          return '<div class="search-result" onclick="goToResult(' + r.lat + ',' + r.lon + ',\'' + name.replace(/'/g,"\'") + '\')">' +
+            '<span class="search-result-icon">📍</span>' + name + '</div>';
+        }).join('');
+        searchResults.classList.add('open');
+      } catch(e) {
+        console.error('Search error:', e);
+      }
+    }
+
+    window.goToResult = function(lat, lon, name) {
+      leafletMap.flyTo([lat, lon], 17, { duration: 1.2 });
+      searchInput.value = name;
+      searchResults.classList.remove('open');
+      searchInput.blur();
+    };
+
+    // ── SIDEBAR TOGGLE (mobile) ──
+    window.toggleSidebar = function() {
+      document.getElementById('sidebar').classList.toggle('open');
+    };
+    window.closeSidebar = function() {
+      document.getElementById('sidebar').classList.remove('open');
+    };
+
+    // ── TOAST ──
+    var toastTimer;
+    function showToast(msg) {
+      var el = document.getElementById('toast');
+      el.textContent = msg;
+      el.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function(){ el.classList.remove('show'); }, 2500);
+    }
+
+    // ── LABEL MODE ──
+    var labelBtn = document.getElementById('label-btn');
+    labelBtn.addEventListener('click', function() {
+      labelMode = !labelMode;
+      labelBtn.textContent = labelMode ? 'Stop labelen' : 'Labelmodus uit';
+      labelBtn.classList.toggle('active', labelMode);
+      document.getElementById('map').classList.toggle('label-mode', labelMode);
+      if (labelMode) {
+        if (leafletMap.getZoom() < 16) leafletMap.setZoom(17);
+        showToast('Klik op een trampoline om te labelen');
+      }
+    });
+
+    // ── MAP CLICK ──
+    leafletMap.on('click', async function(e) {
+      if (!labelMode) return;
+      var lat = e.latlng.lat;
+      var lon = e.latlng.lng;
+      var prov = detectProvince(lat, lon);
+      sessionCount++;
+
+      showToast('📷 Foto ophalen... #' + sessionCount);
+
+      var filename = 'positive/' + Date.now() + '_' + lat.toFixed(5) + '_' + lon.toFixed(5) + '.jpg';
+      var imageUrl = await fetchAndUploadCrop(lat, lon, filename);
+
+      var result = await db.from('labels').insert([{
+        lat: lat, lon: lon,
+        provincie: prov.name, urban: prov.urban,
+        label_class: 'positive', image_url: imageUrl,
+        shape: 'round'
+      }]).select().single();
+
+      if (result.error) { showToast('⚠️ Opslaan mislukt'); return; }
+
+      var l = result.data;
+      dbLabels.push(l);
+      var point = { lat: lat, lon: lon, city: prov.name, labeled: true, db_id: l.id };
+      allPoints.push(point);
+
+      addLabelMarker(l);
+      renderSidebar();
+      renderBubbles();
+      showToast('✓ #' + sessionCount + ' — ' + prov.name + (imageUrl ? ' + foto' : ''));
+      leafletMap.fireEvent('label-placed');
+    });
+
+    leafletMap.on('zoomend', renderBubbles);
+
+    // ── LOAD FROM SUPABASE ──
+    db.from('labels').select('*').eq('label_class', 'positive')
+      .order('created_at', { ascending: false })
+      .then(function(result) {
+        if (result.error || !result.data) return;
+        dbLabels = result.data;
+        result.data.forEach(function(l) {
+          allPoints.push({ lat: l.lat, lon: l.lon, city: l.provincie || 'Gelabeld', labeled: true, db_id: l.id });
+          addLabelMarker(l);
+        });
+        renderSidebar();
+        renderBubbles();
+      });
+
+    renderBubbles();
+
+    // ── PREDICTIONS LAAG ──
+    var predictionLayer = L.layerGroup();
+    var predictionsVisible = false;
+
+    window.togglePredictions = async function() {
+      predictionsVisible = !predictionsVisible;
+      var btn = document.getElementById('btn-predictions');
+      btn.classList.toggle('active', predictionsVisible);
+
+      if (predictionsVisible) {
+        btn.textContent = '🤖 Verberg voorspellingen';
+        predictionLayer.clearLayers();
+        showToast('🤖 Voorspellingen laden...');
+
+        var result = await db.from('predictions').select('*');
+        if (result.error || !result.data || !result.data.length) {
+          showToast('Nog geen voorspellingen gevonden');
+          predictionsVisible = false;
+          btn.classList.remove('active');
+          btn.textContent = '🤖 Toon modelvoorspellingen';
+          return;
+        }
+
+        result.data.forEach(function(p) {
+          // Kleur op basis van score
+          var score = p.score || 0;
+          var color = score > 0.9 ? '#ff4757' : score > 0.8 ? '#ff9500' : '#00c8ff';
+
+          var marker = L.circleMarker([p.lat, p.lon], {
+            radius: 6,
+            fillColor: color,
+            fillOpacity: 0.8,
+            color: '#000',
+            weight: 1,
+          });
+
+          var popup = '<div style="font-size:12px;min-width:160px">' +
+            '<b>' + (p.adres || 'Onbekend adres') + '</b><br>' +
+            '<span style="color:#999;font-size:10px">' + (p.gemeente || '') + '</span><br>' +
+            '<div style="margin-top:6px;display:flex;align-items:center;gap:6px">' +
+              '<div style="flex:1;height:4px;background:#333;border-radius:2px;overflow:hidden">' +
+                '<div style="width:' + (score*100).toFixed(0) + '%;height:100%;background:' + color + '"></div>' +
+              '</div>' +
+              '<span style="color:' + color + ';font-weight:bold">' + (score*100).toFixed(0) + '%</span>' +
+            '</div>' +
+            '<div style="font-size:10px;color:#666;margin-top:4px">🤖 Modelvoorspelling</div>' +
+          '</div>';
+
+          marker.bindPopup(popup, { maxWidth: 200 });
+          predictionLayer.addLayer(marker);
+        });
+
+        predictionLayer.addTo(leafletMap);
+        showToast('🤖 ' + result.data.length + ' voorspellingen geladen');
+        document.getElementById('pred-legend').classList.add('visible');
+
+      } else {
+        btn.textContent = '🤖 Toon modelvoorspellingen';
+        leafletMap.removeLayer(predictionLayer);
+        document.getElementById('pred-legend').classList.remove('visible');
+      }
+    };
+
+    // ── VALIDATIE MODUS ──
+    var valQueue = [];
+    var valIndex = 0;
+    var valTileCircle = null;
+    var valCorrect = 0;
+    var valWrong = 0;
+
+    window.startValidation = async function() {
+      showToast('Voorspellingen laden...');
+      var result = await db.from('predictions')
+        .select('*')
+        .is('validated', null)
+        .order('score', { ascending: false });
+
+      if (result.error || !result.data || !result.data.length) {
+        showToast('Geen ongevalideerde voorspellingen'); return;
+      }
+      valQueue = result.data;
+      valIndex = 0; valCorrect = 0; valWrong = 0;
+      document.getElementById('validation-card').classList.add('active');
+      document.getElementById('btn-validate').classList.add('active');
+      document.getElementById('btn-validate').textContent = '✅ Bezig...';
+      showValCard();
+    };
+
+    function showValCard() {
+      if (valIndex >= valQueue.length) {
+        stopValidation();
+        showToast('✅ Klaar! ' + valCorrect + ' correct, ' + valWrong + ' fout');
+        return;
+      }
+      var p = valQueue[valIndex];
+      document.getElementById('val-progress').textContent = (valIndex+1) + ' / ' + valQueue.length;
+      document.getElementById('val-address').textContent = p.adres || 'Onbekend adres';
+      document.getElementById('val-gemeente').textContent = (p.gemeente || '') + (p.provincie ? ', ' + p.provincie : '');
+
+      var score = p.score || 0;
+      var color = score > 0.9 ? '#ff4757' : score > 0.8 ? '#ff9500' : '#00c8ff';
+      document.getElementById('val-score-fill').style.width = (score*100).toFixed(0) + '%';
+      document.getElementById('val-score-fill').style.background = color;
+      document.getElementById('val-score-num').style.color = color;
+      document.getElementById('val-score-num').textContent = (score*100).toFixed(0) + '%';
+
+      // Mapbox foto
+      var imgUrl = 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/' +
+        p.lon + ',' + p.lat + ',19/256x256?access_token=' + MAPBOX_TOKEN;
+      document.getElementById('val-photo').innerHTML = '<img src="' + imgUrl + '" alt="satellite" />';
+
+      // Vlieg naar locatie
+      leafletMap.flyTo([p.lat, p.lon], 18, { duration: 0.8 });
+
+      // Tile cirkel
+      if (valTileCircle) leafletMap.removeLayer(valTileCircle);
+      valTileCircle = L.circle([p.lat, p.lon], {
+        radius: 12, color: color, weight: 2,
+        fillColor: color, fillOpacity: 0.2, dashArray: '4',
+      }).addTo(leafletMap);
+    }
+
+    window.validateCurrent = async function(isCorrect) {
+      var p = valQueue[valIndex];
+      await db.from('predictions').update({
+        validated: isCorrect,
+        validated_at: new Date().toISOString()
+      }).eq('id', p.id);
+
+      if (isCorrect) valCorrect++; else valWrong++;
+
+      // Fout → voeg toe als negatief trainingsvoorbeeld
+      if (!isCorrect) {
+        await db.from('labels').insert([{
+          lat: p.lat, lon: p.lon,
+          provincie: p.provincie, urban: false,
+          label_class: 'negative', shape: 'none', image_url: null
+        }]);
+      }
+      valIndex++;
+      showValCard();
+    };
+
+    window.skipValidation = function() { valIndex++; showValCard(); };
+
+    window.stopValidation = function() {
+      document.getElementById('validation-card').classList.remove('active');
+      document.getElementById('btn-validate').classList.remove('active');
+      document.getElementById('btn-validate').textContent = '✅ Valideer voorspellingen';
+      if (valTileCircle) { leafletMap.removeLayer(valTileCircle); valTileCircle = null; }
+    };
+
+    // ────────────────────────────────────────────
+    var VINEX = [
+      { name:'Leidsche Rijn (Utrecht)',       lat:52.0889, lon:5.0272 },
+      { name:'Vathorst (Amersfoort)',          lat:52.1889, lon:5.4089 },
+      { name:'Leidschenveen-Ypenburg (DH)',   lat:52.0472, lon:4.3856 },
+      { name:'Maassluis Voornse Zoom',        lat:51.9267, lon:4.2456 },
+      { name:'Carnisselande (Rotterdam)',     lat:51.8578, lon:4.5467 },
+      { name:'IJburg (Amsterdam)',            lat:52.3556, lon:4.9978 },
+      { name:'Brandevoort (Helmond)',         lat:51.4789, lon:5.7156 },
+      { name:'Kattenbroek (Amersfoort)',      lat:52.1456, lon:5.3678 },
+      { name:'Roomburg (Leiden)',             lat:52.1389, lon:4.5156 },
+      { name:'Ypenburg (Den Haag)',           lat:52.0356, lon:4.3578 },
+      { name:'Nieuw Terbregge (Rotterdam)',   lat:51.9578, lon:4.5378 },
+      { name:'Houten Castellum',             lat:52.0189, lon:5.1689 },
+      { name:'Westlandse Zoom (Westland)',    lat:51.9978, lon:4.1956 },
+      { name:'Pijnacker-Nootdorp',           lat:52.0156, lon:4.4389 },
+      { name:'Berkel en Rodenrijs',          lat:51.9789, lon:4.4778 },
+      { name:'Almere Buiten',                lat:52.3878, lon:5.3156 },
+      { name:'Almere Hout',                  lat:52.3689, lon:5.3678 },
+      { name:'Nieuwland (Zoetermeer)',       lat:52.0678, lon:4.5189 },
+      { name:'Centrum (Spijkenisse)',        lat:51.8489, lon:4.3256 },
+      { name:'Nesselande (Rotterdam)',       lat:51.9978, lon:4.5856 },
+    ];
+
+    var vinexIdx = 0;
+    var vinexHighlightLayer = L.layerGroup();
+    var vinexActive = false;
+
+    // 1. HIGHLIGHT NIEUWBOUWWIJKEN
+    window.toggleVinexHighlight = function() {
+      vinexActive = !vinexActive;
+      var btn = document.getElementById('btn-highlight');
+      btn.classList.toggle('active', vinexActive);
+      btn.textContent = vinexActive ? '🏘 Verberg wijken' : '🏘 Toon nieuwbouwwijken';
+
+      if (vinexActive) {
+        vinexHighlightLayer.clearLayers();
+        VINEX.forEach(function(v, i) {
+          // Cirkel overlay per wijk
+          L.circle([v.lat, v.lon], {
+            radius: 600,
+            fillColor: '#e8ff47',
+            fillOpacity: 0.08,
+            color: '#e8ff47',
+            weight: 1.5,
+            opacity: 0.5,
+          }).bindTooltip(v.name, { permanent: false, direction: 'top', className: 'vinex-tooltip' })
+            .addTo(vinexHighlightLayer);
+
+          // Label
+          L.marker([v.lat, v.lon], {
+            icon: L.divIcon({
+              className: '',
+              html: '<div style="background:rgba(232,255,71,0.9);color:#000;font-size:9px;font-weight:bold;padding:2px 5px;border-radius:3px;white-space:nowrap">' + (i+1) + '. ' + v.name.split('(')[0].trim() + '</div>',
+              iconAnchor: [0, 10],
+            })
+          }).addTo(vinexHighlightLayer);
+        });
+        vinexHighlightLayer.addTo(leafletMap);
+        leafletMap.setView([52.05, 4.7], 9);
+      } else {
+        leafletMap.removeLayer(vinexHighlightLayer);
+      }
+    };
+
+    // 2. VOLGENDE SUGGESTIE (Randstad)
+    window.nextSuggestion = function() {
+      var wijk = VINEX[vinexIdx % VINEX.length];
+      vinexIdx++;
+      leafletMap.flyTo([wijk.lat, wijk.lon], 17, { duration: 1.2 });
+      showToast('📍 ' + wijk.name + ' (' + vinexIdx + '/' + VINEX.length + ')');
+    };
+
+    // ── LANDELIJKE LOCATIES ──
+    var RURAL = [
+      { name:'Nunspeet',     lat:52.3856, lon:5.7889 },
+      { name:'Ommen',        lat:52.5178, lon:6.4222 },
+      { name:'Blaricum',     lat:52.2789, lon:5.2456 },
+      { name:'Laren NH',     lat:52.2556, lon:5.2178 },
+      { name:'Baarn',        lat:52.2089, lon:5.2867 },
+      { name:'Soest',        lat:52.1756, lon:5.3056 },
+      { name:'Oisterwijk',   lat:51.5789, lon:5.1956 },
+      { name:'Vught',        lat:51.6489, lon:5.2956 },
+      { name:'Wassenaar',    lat:52.1456, lon:4.3956 },
+      { name:'Aerdenhout',   lat:52.3756, lon:4.5656 },
+      { name:'Epe',          lat:52.3478, lon:5.9856 },
+      { name:'Heerde',       lat:52.3889, lon:6.0356 },
+      { name:'Ermelo',       lat:52.2989, lon:5.6256 },
+      { name:'Harderwijk',   lat:52.3456, lon:5.6178 },
+      { name:'Driebergen',   lat:52.0456, lon:5.2856 },
+      { name:'Zeist',        lat:52.0878, lon:5.2378 },
+      { name:'Bilthoven',    lat:52.1256, lon:5.1956 },
+      { name:'Paterswolde',  lat:53.1156, lon:6.5656 },
+      { name:'Haren GN',     lat:53.1689, lon:6.6056 },
+      { name:'Bergen NH',    lat:52.6689, lon:4.7056 },
+    ];
+    var ruralIdx = 0;
+
+    window.nextRural = function() {
+      var loc = RURAL[ruralIdx % RURAL.length];
+      ruralIdx++;
+      leafletMap.flyTo([loc.lat, loc.lon], 17, { duration: 1.2 });
+      showToast('🌳 ' + loc.name + ' (' + ruralIdx + '/' + RURAL.length + ')');
+      document.getElementById('btn-rural').textContent = '🌳 ' + loc.name + ' →';
+    };
+
+    // 3. GRID MODUS
+    var gridMode = false;
+    var gridCells = [];
+    var gridIndex = 0;
+    var gridLayer = L.layerGroup();
+    var GRID_STEP = 0.0012; // ~80 meter per stap
+
+    window.toggleGridMode = function() {
+      gridMode = !gridMode;
+      var btn = document.getElementById('btn-grid');
+      btn.classList.toggle('active', gridMode);
+      btn.textContent = gridMode ? '⊞ Stop grid' : '⊞ Grid-modus';
+
+      if (gridMode) {
+        startGrid();
+      } else {
+        stopGrid();
+      }
+    };
+
+    function startGrid() {
+      var center = leafletMap.getCenter();
+      var bounds = leafletMap.getBounds();
+      var minLat = bounds.getSouth();
+      var maxLat = bounds.getNorth();
+      var minLon = bounds.getWest();
+      var maxLon = bounds.getEast();
+
+      gridCells = [];
+      for (var lat = minLat; lat < maxLat; lat += GRID_STEP) {
+        for (var lon = minLon; lon < maxLon; lon += GRID_STEP) {
+          gridCells.push([lat + GRID_STEP/2, lon + GRID_STEP/2]);
+        }
+      }
+      gridIndex = 0;
+
+      // Toon grid overlay
+      gridLayer.clearLayers();
+      L.rectangle([[minLat, minLon],[maxLat, maxLon]], {
+        color: '#e8ff47', weight: 1, fill: false, opacity: 0.3, dashArray: '4'
+      }).addTo(gridLayer);
+      gridLayer.addTo(leafletMap);
+
+      document.getElementById('grid-bar').style.display = 'block';
+      document.getElementById('grid-info').style.display = 'block';
+
+      goToGridCell();
+      showToast('⊞ Grid gestart — ' + gridCells.length + ' blokken');
+    }
+
+    function stopGrid() {
+      gridLayer.clearLayers();
+      leafletMap.removeLayer(gridLayer);
+      document.getElementById('grid-bar').style.display = 'none';
+      document.getElementById('grid-info').style.display = 'none';
+    }
+
+    function goToGridCell() {
+      if (gridIndex >= gridCells.length) {
+        showToast('✅ Grid volledig gescand!');
+        stopGrid();
+        gridMode = false;
+        document.getElementById('btn-grid').classList.remove('active');
+        document.getElementById('btn-grid').textContent = '⊞ Grid-modus';
+        return;
+      }
+      var cell = gridCells[gridIndex];
+      leafletMap.panTo(cell, { animate: true, duration: 0.4 });
+
+      var pct = (gridIndex / gridCells.length * 100).toFixed(0);
+      document.getElementById('grid-bar-fill').style.width = pct + '%';
+      document.getElementById('grid-info').textContent =
+        'Grid: blok ' + (gridIndex+1) + ' / ' + gridCells.length + ' (' + pct + '%) — klik trampoline of druk → voor volgende';
+    }
+
+    // Pijltoets → voor grid navigatie
+    document.addEventListener('keydown', function(e) {
+      if (!gridMode) return;
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        e.preventDefault();
+        gridIndex++;
+        goToGridCell();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        gridIndex = Math.max(0, gridIndex - 1);
+        goToGridCell();
+      }
+    });
+
+    // Na labelen in grid modus: automatisch naar volgend blok
+    var origClick = leafletMap._events && leafletMap._events.click;
+    leafletMap.on('label-placed', function() {
+      if (gridMode) {
+        setTimeout(function() { gridIndex++; goToGridCell(); }, 800);
+      }
+    });
+
+    // ── EXPORT / BACKUP ──
+    window.exportDataset = async function() {
+      showToast('💾 Dataset ophalen...');
+      var result = await db.from('labels').select('*').order('created_at', { ascending: true });
+      if (result.error || !result.data) { showToast('⚠️ Export mislukt'); return; }
+
+      var data = result.data;
+
+      // CSV export
+      var headers = ['id','lat','lon','provincie','urban','label_class','shape','image_url','created_at'];
+      var csv = headers.join(',') + '\n' + data.map(function(r) {
+        return headers.map(function(h) {
+          var val = r[h] === null || r[h] === undefined ? '' : String(r[h]);
+          return '"' + val.replace(/"/g, '""') + '"';
+        }).join(',');
+      }).join('\n');
+
+      // Download CSV
+      var csvBlob = new Blob([csv], { type: 'text/csv' });
+      var csvUrl = URL.createObjectURL(csvBlob);
+      var csvLink = document.createElement('a');
+      csvLink.href = csvUrl;
+      csvLink.download = 'trampoline_labels_' + new Date().toISOString().slice(0,10) + '.csv';
+      csvLink.click();
+      URL.revokeObjectURL(csvUrl);
+
+      // Download JSON
+      var json = JSON.stringify(data, null, 2);
+      var jsonBlob = new Blob([json], { type: 'application/json' });
+      var jsonUrl = URL.createObjectURL(jsonBlob);
+      var jsonLink = document.createElement('a');
+      jsonLink.href = jsonUrl;
+      jsonLink.download = 'trampoline_labels_' + new Date().toISOString().slice(0,10) + '.json';
+      jsonLink.click();
+      URL.revokeObjectURL(jsonUrl);
+
+      showToast('✅ ' + data.length + ' labels geëxporteerd als CSV + JSON');
+    };
+
+    // ── NEGATIEVE VOORBEELDEN GENERATOR ──
+    var NL_BOUNDS = { minLat:50.75, maxLat:53.55, minLon:3.35, maxLon:7.25 };
+    var negCancelled = false;
+
+    function randomNLCoord() {
+      var lat = NL_BOUNDS.minLat + Math.random() * (NL_BOUNDS.maxLat - NL_BOUNDS.minLat);
+      var lon = NL_BOUNDS.minLon + Math.random() * (NL_BOUNDS.maxLon - NL_BOUNDS.minLon);
+      return { lat: +lat.toFixed(6), lon: +lon.toFixed(6) };
+    }
+
+    window.cancelNegatives = function() {
+      negCancelled = true;
+      document.getElementById('neg-overlay').style.display = 'none';
+      showToast('Gestopt met genereren');
+    };
+
+    window.startNegativeGeneration = async function() {
+      var TOTAL = 500;
+      negCancelled = false;
+      document.getElementById('neg-overlay').style.display = 'flex';
+      document.getElementById('neg-progress-fill').style.width = '0%';
+      document.getElementById('neg-status').textContent = '0 / ' + TOTAL + ' gegenereerd...';
+
+      var done = 0;
+      var errors = 0;
+
+      for (var i = 0; i < TOTAL; i++) {
+        if (negCancelled) break;
+
+        var coord = randomNLCoord();
+        var prov = detectProvince(coord.lat, coord.lon);
+        var filename = 'negative/' + Date.now() + '_' + coord.lat + '_' + coord.lon + '.jpg';
+
+        try {
+          var url = 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/' +
+            coord.lon + ',' + coord.lat + ',19/256x256?access_token=' + MAPBOX_TOKEN;
+          var resp = await fetch(url);
+
+          if (resp.ok) {
+            var blob = await resp.blob();
+            var uploadResult = await db.storage
+              .from('trampoline-crops')
+              .upload(filename, blob, { contentType: 'image/jpeg', upsert: false });
+
+            var imageUrl = null;
+            if (!uploadResult.error) {
+              imageUrl = db.storage.from('trampoline-crops').getPublicUrl(filename).data.publicUrl;
+            }
+
+            await db.from('labels').insert([{
+              lat: coord.lat, lon: coord.lon,
+              provincie: prov.name, urban: prov.urban,
+              label_class: 'negative',
+              shape: 'none',
+              image_url: imageUrl
+            }]);
+            done++;
+          } else {
+            errors++;
+          }
+        } catch(e) {
+          errors++;
+        }
+
+        var pct = ((i + 1) / TOTAL * 100).toFixed(0);
+        document.getElementById('neg-progress-fill').style.width = pct + '%';
+        document.getElementById('neg-status').textContent =
+          done + ' / ' + TOTAL + ' opgeslagen' + (errors > 0 ? ' (' + errors + ' fouten)' : '');
+
+        // Pauze om rate limiting te vermijden
+        await new Promise(function(r) { setTimeout(r, 200); });
+      }
+
+      document.getElementById('neg-overlay').style.display = 'none';
+      showToast('✅ ' + done + ' negatieve voorbeelden opgeslagen!');
+    };
+
+  </script>
+</body>
+</html>
